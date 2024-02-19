@@ -447,13 +447,23 @@ public String homeLoginV3(HttpServletRequest request, Model model) {
 
 [`hello.login.web.HomeController`]
 
-* 세션을 찾고, 세션에 들어있는 데이터를 찾는 번거로운 과정을 스프링이 한번에 처리해주는 것을 확인할 수 있다.
+* <u>세션을 찾고, 세션에 들어있는 데이터를 찾는 번거로운 과정을 스프링이 한번에 처리해주는 것을 확인할 수 있다.</u>
 
 ```java
 @GetMapping("/")
 public String homeLoginV3Spring(
         @SessionAttribute(name = SessionConst.LOGIN_MEMBER, required = false) Member loginMember, Model model) {
 
+	  /** 이 과정이 생략 되었다.
+	  
+  	HttpSession session = request.getSession(false);
+    if (session == null) {
+        return "home";
+    }
+
+    Member loginMember = (Member) session.getAttribute(SessionConst.LOGIN_MEMBER);
+    **/
+  
     // 세션에 회원 데이터가 없으면 home
     if (loginMember == null) {
         return "home";
@@ -482,3 +492,103 @@ public String homeLoginV3Spring(
  server.servlet.session.tracking-modes=cookie
 ```
 
+
+
+## 세션 정보와 타임아웃 설정
+
+### 세션 정보 확인
+
+* `sessionId`: 세션ID, `JSESSIONID`의 값이다.
+* `maxInactiveInterval`: 세션의 유효 시간
+* `creationTime`: 세션 생성일시
+* `lastAccessedTime`: 세션과 연결된 사용자가 최근에 서버에 접근한 시간
+* `isNew`: 새로 생성된 세션인지, 아니면 과거에 이미 만들어졌고 클라이언트에서 서버로 `sessionId(JSESSIONID)`를 요청해서 조회된 세션인지의 여부
+
+```java
+package hello.login.web.session;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpSession;
+import java.util.Date;
+
+@Slf4j
+@RestController
+public class SessionInfoController {
+
+    @GetMapping("/session-info")
+    public String sessionInfo(HttpServletRequest request) {
+
+        HttpSession session = request.getSession(false);
+        if (session == null) {
+            return "세션이 없습니다.";
+        }
+
+        // 세션 데이터 출력
+        session.getAttributeNames().asIterator()
+                .forEachRemaining(name -> log.info("session name = {}, value = {}", name, session.getAttribute(name)));
+
+        log.info("sessionId={}", session.getId());
+        log.info("maxInactiveInterval={}", session.getMaxInactiveInterval());
+        log.info("creationTime={}", new Date(session.getCreationTime()));
+        log.info("lastAccessedTime={}", new Date(session.getLastAccessedTime()));
+        log.info("isNew={}", session.isNew());
+
+        return "세션 출력";
+    }
+}
+
+```
+
+
+
+### 세션 타임아웃 설정
+
+세션은 사용자가 로그아웃을 호출해서 `session.invalidate()`를 호출 되는 경우 삭제되는데, <u>대부분의 사용자는 웹 브라우저를 강제로 종료하고, HTTP가 비 연결성이므로 서버 입장에서는 웹 브라우저가 종료되었는지 알아낼 수가 없다.</u> 따라서 세션 데이터도 언제 삭제해야 되는지 판단하기 어렵게 된다.
+
+
+
+#### 문제점 발생
+
+위와 같은 상황으로 다음과 같은 문제들이 일어날 수 있다.
+
+* 세션과 관련된 쿠키(`JSESSIONID`)를 탈취 당했을 경우 오랜 시간이 지나도 해당 쿠키로 악의적인 요청을 할 수 있다.
+* <u>세션은 기본적으로 메모리에 생성되는데</u>, 메모리 자원은 무한하지 않기 때문에 불필요한 세션을 지우지 않으면 서버에 장애가 생길 수 있다.
+
+
+
+#### 세션의 종료 시점
+
+서블릿에서 제공하는 `HttpSession`은 세션과 관련된 쿠키(`JSESSIONID`)를 가지고 서버에 새로운 요청을 할 때 세션의 생존 시간을 기본으로 30분 연장시켜준다.
+
+<u>즉, `session.getLastAccessedTime()` : 최근 세션 접근 시간을 가지고 새로운 요청이 오면 이 값을 갱신 시켜서 30분씩 세션 시간을 연장해주는 것이다.</u>
+
+
+
+#### 세션 타임아웃 설정
+
+[`application.properties`]
+
+* 글로벌 설정은 분 단위로 설정해야 한다.
+
+```java
+server.servlet.session.timeout=1800 // 1800초(기본 값)
+```
+
+
+
+* 특정 세션 단위로 시간 설정
+
+```java
+session.setMaxInactiveInterval(1800); //1800초
+```
+
+
+
+> 참고사항
+>
+> <u>실무에서 주의할 점은 세션에는 최소한의 데이터만 보관해야 한다는 점이다.</u>
+> 메모리 사용량이 급격하게 늘어나면서 장애로 이어질 수 있고, 추가로 세션 시간을 길게 가져가면 마찬가지로 메모리 사용량이 누적될 수 있으므로 적당한 시간을 고려해서 선택하는 것이 필요하다.
