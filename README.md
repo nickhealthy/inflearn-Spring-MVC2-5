@@ -247,3 +247,78 @@ class SessionManagerTest {
 }
 ```
 
+
+
+## 로그인 처리하기 - 직접 만든 세션 적용
+
+> `SessionManager` 부분은 위의 소스코드 참고
+
+### 예제
+
+[`hello.login.web.login.LoginController`]
+
+* 로그인 성공 시 세션을 등록한다.
+* 세션에 `loginMember`를 저장해두고(값), 쿠키도 함께 발행한다.(쿠키의 값은 세션의 UUID)
+
+```java
+@PostMapping("/login")
+public String loginV2(@Valid @ModelAttribute LoginForm form, BindingResult bindingResult, HttpServletResponse response) {
+
+    if (bindingResult.hasErrors()) {
+        return "login/loginForm";
+    }
+
+    Member loginMember = loginService.login(form.getLoginId(), form.getPassword());
+    log.info("login? {}", loginMember);
+
+    if (loginMember == null) {
+        bindingResult.reject("loginFail", "아이디 또는 비밀번호가 맞지 않습니다.");
+        return "login/loginForm";
+    }
+
+    // 로그인 성공 처리
+    // 세션 관리자를 통해 세션을 생성하고, 회원 데이터를 보관
+    sessionManager.createSession(loginMember, response);
+
+    return "redirect:/";
+}
+```
+
+* 로그아웃 시 해당 세션의 정보를 제거한다.
+
+```java
+@PostMapping("/logout")
+public String logoutV2(HttpServletRequest request) {
+    sessionManager.expire(request);
+    return "redirect:/";
+}
+```
+
+
+
+[`hello.login.web.HomeController`]
+
+* 사용자가 로그인 했을 때 홈 화면을 처리해주는 컨트롤러도 수정
+
+```java
+@GetMapping("/")
+public String homeLoginV2(HttpServletRequest request, Model model) {
+
+    // 세션 관리자에 저장된 회원 정보 조회
+    Member member = (Member) sessionManager.getSession(request);
+    if (member == null) {
+        return "home";
+    }
+
+    // 로그인
+    model.addAttribute("member", member);
+    return "loginHome";
+}
+```
+
+
+
+이를 통해 세션이라는 것은 뭔가 특별한 것이 아니라 <u>**단지 쿠키를 사용하는데, 서버에서 데이터를 유지하는 방법일 뿐이다.**</u>
+
+
+
