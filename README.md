@@ -670,3 +670,103 @@ session.setMaxInactiveInterval(1800); //1800초
  }
 ```
 
+
+
+## 서블릿 필터 - 요청 로그
+
+### 예제
+
+* 필터를 사용하기 위해 `javax.servlet.Filter` 인터페이스를 구현해야 한다.
+* `doFilter(ServletRequest request, ServletResponse response, FilterChain chain)`
+  * HTTP 요청이 오면 `doFilter()`가 호출된다.
+  * `ServeletRequest`는 `HttpServletRequest`의 부모로서 HTTP 요청이 아닌 경우까지 고려해서 만든 인터페이스다.
+* `chain.doFilter()`
+  * **이 부분이 가장 중요한 부분인데, 다음 필터가 있으면(필터 체인) 다음 필터를 호출하고, 그렇지 않으면 서블릿을 호출한다.**
+  * 해당 메서드를 호출하지 않았을 때 다음 단계로 진행되지 않는다.
+
+```java
+package hello.login.web.filter;
+
+import lombok.extern.slf4j.Slf4j;
+
+import javax.servlet.*;
+import javax.servlet.http.HttpServletRequest;
+import java.io.IOException;
+import java.util.UUID;
+
+@Slf4j
+public class LogFilter implements Filter {
+    @Override
+    public void init(FilterConfig filterConfig) throws ServletException {
+        log.info("log filter init");
+    }
+    
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+        HttpServletRequest httpRequest = (HttpServletRequest) request;
+        String requestURI = httpRequest.getRequestURI();
+
+        String uuid = UUID.randomUUID().toString();
+
+        try {
+            log.info("REQUEST [{}][{}]", uuid, requestURI);
+            chain.doFilter(request, response);
+        } catch (Exception e) {
+            throw e;
+        } finally {
+            log.info("RESPONSE [{}][{}]", uuid, requestURI);
+        }
+    }
+
+    @Override
+    public void destroy() {
+        log.info("log filter destroy");
+    }
+}
+```
+
+
+
+#### 필터 설정
+
+[`hello.login.WebConfig`]
+
+* <u>필터를 등록하는 방법은 여러가지가 있지만, 스프링 부트를 사용한다면 `FilterRegistrationBean`을 사용해서 등록하면 된다.</u>
+  * `@ServletComponentScan, @WebFilter(filterName = "logFilter", urlPatterns = "/*")`로도 필터 등록이 가능하지만 필터 순서 조절이 안된다.
+  * <u>`FilterRegistrationBean`은 스프링부트에서 필터를 톰캣의 서블릿 컨텍스트에 추가할 수 있도록 지원하는 빈이다.</u>
+    * **즉, 해당 클래스를 사용해서 빈으로 등록하면 스프링의 애플리케이션 컨텍스트에 필터가 추가되는 것이 아니라, 톰캣이 구동될 때 서블릿 컨텍스트에 필터를 추가하게 된다.**
+* `setFilter(new LogFilter())`: 등록할 필터를 지정한다.
+* `setOrder(1)`: 필터는 체인으로 동작해 순서가 중요하다. 낮을수록 먼저 동작한다.
+* `addUrlPatterns("/*")`: 필터를 적용할 URL 패턴을 지정한다. 한 번에 여러 패턴을 지정할 수 있다.
+  * <u>URL 패턴에 대한 룰은 필터와 서블릿 모두 동일하다.</u> 서블릿 URL 패턴으로 검색해보자.
+
+```java
+package hello.login;
+
+import hello.login.web.filter.LogFilter;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
+
+import javax.servlet.Filter;
+
+public class WebConfig {
+
+    @Bean
+    public FilterRegistrationBean logFilter() {
+        FilterRegistrationBean<Filter> filterRegistrationBean = new FilterRegistrationBean<>();
+        filterRegistrationBean.setFilter(new LogFilter());  // 등록한 필터를 지정
+        filterRegistrationBean.setOrder(1);                 // 필터는 체인으로 동작해 순서가 중요하다. 낮을수록 먼저 동작한다.
+        filterRegistrationBean.addUrlPatterns("/*");        // 필터를 적용할 URL 패턴을 지정한다. 한번에 여러 패턴을 지정할 수 있다.
+        return filterRegistrationBean;
+    }
+}
+```
+
+
+
+> 참고사항
+>
+> <u>실무에서 HTTP 요청 시 같은 요청의 로그에 모두 같은 식별자를 자동으로 남기는 방법은 `logback mdc`로 검색해보자</u>
+
+
+
