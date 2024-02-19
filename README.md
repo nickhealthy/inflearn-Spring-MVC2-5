@@ -427,3 +427,58 @@ public String homeLoginV3(HttpServletRequest request, Model model) {
 * `request.getSession(false)`
   * 세션이 있으면 기존 세션을 반환한다.
   * 세션이 없으면 새로운 세션을 생성하지 않는다. `null` 을 반환한다.
+
+
+
+## 로그인 처리하기 - 서블릿 HTTP 세션2
+
+### @SessionAttribute
+
+스프링은 세션을 더 편리하게 사용할 수 있도록 `@SessionAttribute` 을 지원한다.
+이미 로그인 된 사용자를 찾을 때는 다음과 같이 사용하면 된다.
+
+```java
+@SessionAttribute(name = "loginMember", required = false) Member loginMember
+```
+
+
+
+### 예제
+
+[`hello.login.web.HomeController`]
+
+* 세션을 찾고, 세션에 들어있는 데이터를 찾는 번거로운 과정을 스프링이 한번에 처리해주는 것을 확인할 수 있다.
+
+```java
+@GetMapping("/")
+public String homeLoginV3Spring(
+        @SessionAttribute(name = SessionConst.LOGIN_MEMBER, required = false) Member loginMember, Model model) {
+
+    // 세션에 회원 데이터가 없으면 home
+    if (loginMember == null) {
+        return "home";
+    }
+
+    // 세션이 유지되면 로그인으로 이동
+    model.addAttribute("member", loginMember);
+    return "loginHome";
+
+}
+```
+
+
+
+### TrackingModes
+
+로그인을 처음 시도했을 때 `jsessionid`가 URL에 포함되어 있는 것을 확인할 수 있는데, 이것은 <u>웹 브라우저가 쿠키를 지원하지 않을 때 쿠키 대신 URL을 통해서 세션을 유지하는 방법이다.</u>  서버 입장에서는 웹 브라우저가 쿠키를 지원하는지 하지 않는지 최초에는 판단하지 못하므로, 쿠키 값도 전달하고, URL에 `jsessionid`도 함께 전달하는 것이다.
+
+
+
+#### URL 전달 방식이 아닌 항상 쿠키를 통해서만 세션을 유지하고 싶으면 다음 옵션을 넣으면 된다.
+
+[`application.properties`]
+
+```java
+ server.servlet.session.tracking-modes=cookie
+```
+
