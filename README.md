@@ -1089,3 +1089,93 @@ public class WebConfig implements WebMvcConfigurer {
 
 ```
 
+
+
+## 스프링 인터셉터 - 인증 체크
+
+이번에는 스프링 인터셉터로 인증 체크 기능을 구현해보자
+
+
+
+### 예제
+
+* 인증이라는 것은 컨트롤러 호출 전에만 호출되면 된다. 따라서 `preHandle` 만 구현하면 된다.
+
+```java
+package hello.login.web.interceptor;
+
+import hello.login.web.SessionConst;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.ModelAndView;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+import javax.websocket.Session;
+
+@Slf4j
+public class LoginCheckInterceptor implements HandlerInterceptor {
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        String requestURI = request.getRequestURI();
+
+        log.info("인증 체크 인터셉터 실행 {}", requestURI);
+        HttpSession session = request.getSession();
+
+        if (session == null || session.getAttribute(SessionConst.LOGIN_MEMBER) == null) {
+            log.info("미인증 사용자 요청");
+            response.sendRedirect("/login?redirectURL=" + requestURI);
+            return false;
+        }
+
+        return true;
+    }
+
+    @Override
+    public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView modelAndView) throws Exception {
+        HandlerInterceptor.super.postHandle(request, response, handler, modelAndView);
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+        HandlerInterceptor.super.afterCompletion(request, response, handler, ex);
+    }
+}
+```
+
+
+
+[인터셉터 등록 - `WebConfig`]
+
+* 인터셉터를 적용하거나 하지 않을 부분은 `addPathPatterns` 와 `excludePathPatterns` 에 작성하면 된다.
+* <u>`excludePathPatterns`에 등록된 경로들은 인터셉터 자체를 타지 않는다.</u>
+
+```java
+public class WebConfig implements WebMvcConfigurer {
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(new LogInterceptor())
+                .order(1)
+                .addPathPatterns("/**")
+                .excludePathPatterns("/css/**", "/*.ico", "/error");
+
+        registry.addInterceptor(new LoginCheckInterceptor())
+                .order(2)
+                .addPathPatterns("/**")
+                .excludePathPatterns("/", "/members/add", "/login", "/logout",
+                            "/css/**", "/*.ico", "/error");
+    }
+}
+```
+
+
+
+### 정리
+
+서블릿 필터와 비교해서 스프링 인터셉터가 개발자 입장에서 구현과 작성이 훨씬 편리하다. 특별한 문제가 없다면 인터셉터로 구현하자.
+
+
+
