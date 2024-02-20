@@ -1179,3 +1179,179 @@ public class WebConfig implements WebMvcConfigurer {
 
 
 
+## ArgumentResolver 활용
+
+공통 작업이 필요할 때 `ArgumentResolver`를 활용하면 컨트롤러를 더욱 편리하게 사용할 수 있다.
+`ArgumentResolver`는 컨트롤러의 파라미터에 대한 값을 판별해주는 역활을 한다.
+이번 예제에서는 로그인 작업으로 `@SessionAttribute` 파라미터 대신에 사용자 정의 애너테이션을(`@Login`)를 만들어서 간편하게 인가된 사용자인지 체크해주는 작업을 진행할 것이다.
+
+
+
+### 예제
+
+* `@Login` 애노테이션이 있으면 해당 컨트롤러를 탈 때, 직접 만든 `ArgumentResolver` 가 동작해서 자동으로 세션에 있는 로그인 회원을 찾아주고, 만약 세션에 없다면 `null` 을 반환하도록 개발해보자.
+* 이미 `@SessionAttribute` 애너테이션을 통해 간소화 시켰지만,  로그인 인증 처리와 같은 동일한 작업에 대해서 사용자 정의 애너테이션(`@Login`)을 구현한다면 더욱 편리하게 인증 작업을 간략화 시킬 수 있다.
+
+```java
+public class HomeController {
+
+		// @GetMapping("/")
+    public String homeLoginV3Spring(
+            @SessionAttribute(name = SessionConst.LOGIN_MEMBER, required = false) Member loginMember, Model model) {
+
+        // 세션에 회원 데이터가 없으면 home
+        if (loginMember == null) {
+            return "home";
+        }
+
+        // 세션이 유지되면 로그인으로 이동
+        model.addAttribute("member", loginMember);
+        return "loginHome";
+
+    }
+
+    @GetMapping("/")
+    public String homeLoginV3ArgumentResolver(
+            @Login Member loginMember, Model model) {
+
+        // 세션에 회원 데이터가 없으면 home
+        if (loginMember == null) {
+            return "home";
+        }
+
+        // 세션이 유지되면 로그인으로 이동
+        model.addAttribute("member", loginMember);
+        return "loginHome";
+
+    }
+}
+```
+
+
+
+[`@Login` 애너테이션 생성]
+
+* `@Target(ElementType.PARAMETER)` : 파라미터에만 사용
+* `@Retention(RetentionPolicy.RUNTIME)` : 리플렉션 등을 활용할 수 있도록 런타임까지 애노테이션 정보가 남아있음
+
+```java
+package hello.login.web.argumentresolver;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+@Target(ElementType.PARAMETER)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface Login {
+}
+```
+
+
+
+[HandlerMethodArgumentResolver 구현]
+
+`HandlerMethodArgumentResolver` 인터페이스를 구현해야 한다.
+
+* `supportsParameter`
+  * `@Login` 애너테이션이 있으면서 Member 타입이면 해당 `ArgumentResolver`가 사용된다.
+  * <u>이 메서드가 통과되어야 resolveArguemnt가 실행된다.</u>
+* `resolveArgument`
+  * <u>컨트롤러 호출 직전에 호출 되어서 필요한 파라미터 정보를 생성해준다.</u>
+
+```java
+package hello.login.web.argumentresolver;
+
+import hello.login.domain.member.Member;
+import hello.login.web.SessionConst;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.MethodParameter;
+import org.springframework.web.bind.support.WebDataBinderFactory;
+import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.method.support.HandlerMethodArgumentResolver;
+import org.springframework.web.method.support.ModelAndViewContainer;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpSession;
+
+@Slf4j
+public class LoginMemberArgumentResolver implements HandlerMethodArgumentResolver {
+
+
+    /**
+     * @Login 애너테이션이 있으면서 Member 타입이면 해당 ArgumentResolver가 사용된다.
+     * 이 메서드가 통과되어야 resolveArguemnt가 실행된다.
+     */
+    @Override
+    public boolean supportsParameter(MethodParameter parameter) {
+      log.info("supportsParameter 실행");
+
+        boolean hasLoginAnnotation = parameter.hasParameterAnnotation(Login.class);
+        boolean hasMemberType = Member.class.isAssignableFrom(parameter.getParameterType());
+
+        return hasMemberType && hasLoginAnnotation;
+    }
+
+    /**
+     * 컨트롤러 호출 직전에 호출 되어서 필요한 파라미터 정보를 생성해준다.
+     * 여기서는 세션에 있는 회원 정보인 member 객체를 찾아서 반환해준다. 아니면 null
+     * 이후 스프링MVC는 컨트롤러의 메서드를 호출하면서 여기에서 반환된 member 객체를 파라미터에 전달해준다.
+     */
+    @Override
+    public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer, NativeWebRequest webRequest, WebDataBinderFactory binderFactory) throws Exception {
+        log.info("resolveArgument 실행");
+
+        // HttpServletRequest 객체가 필요하므로 getNativeRequest 통해 객체 반환
+        HttpServletRequest request = (HttpServletRequest) webRequest.getNativeRequest();
+        HttpSession session = request.getSession();
+        if (session == null) {
+            return null;
+        }
+
+        return session.getAttribute(SessionConst.LOGIN_MEMBER);
+    }
+}
+```
+
+
+
+[`WebMvcConfigurer`에 설정 추가(등록)]
+
+`addArgumentResolvers` 메서드를 오버라이딩하여 `ArgumentResolver`를 등록할 수 있다.
+
+```java
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+
+    @Override
+    public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
+        resolvers.add(new LoginMemberArgumentResolver());
+    }
+}
+```
+
+
+
+#### 실행 결과
+
+중간에 `ArgumentResolver`가 실행되어 해당 컨트롤러의 파라미터에 세션 값을 찾아 넣어주고 있다.
+
+```java
+20 21:28:30.330  INFO 5829 --- [nio-8080-exec-6] h.login.web.interceptor.LogInterceptor   : REQUEST [26b3b4c3-a68b-46cf-b4c1-8bde0ee02b93][/login][hello.login.web.login.LoginController#loginV4(LoginForm, BindingResult, String, HttpServletRequest)]
+2024-02-20 21:28:30.335  INFO 5829 --- [nio-8080-exec-6] hello.login.web.login.LoginController    : login? Member(id=1, loginId=test, name=테스터, password=test!)
+2024-02-20 21:28:30.338  INFO 5829 --- [nio-8080-exec-6] h.login.web.interceptor.LogInterceptor   : postHandle [ModelAndView [view="redirect:/"; model={}]]
+2024-02-20 21:28:30.346  INFO 5829 --- [nio-8080-exec-6] h.login.web.interceptor.LogInterceptor   : RESPONSE [26b3b4c3-a68b-46cf-b4c1-8bde0ee02b93][/login]
+  
+// redirect 한 이후
+2024-02-20 21:28:30.353  INFO 5829 --- [nio-8080-exec-7] h.login.web.interceptor.LogInterceptor   : REQUEST [a5f76476-3ece-486f-934f-c7586960f731][/][hello.login.web.HomeController#homeLoginV3ArgumentResolver(Member, Model)]
+2024-02-20 21:28:30.353  INFO 5829 --- [nio-8080-exec-7] h.l.w.a.LoginMemberArgumentResolver      : resolveArgument 실행 // 아규먼트리졸버가 실행되었다.
+2024-02-20 21:28:30.354  INFO 5829 --- [nio-8080-exec-7] h.login.web.interceptor.LogInterceptor   : postHandle [ModelAndView [view="loginHome"; model={member=Member(id=1, loginId=test, name=테스터, password=test!), org.springframework.validation.BindingResult.member=org.springframework.validation.BeanPropertyBindingResult: 0 errors}]]
+2024-02-20 21:28:30.372  INFO 5829 --- [nio-8080-exec-7] h.login.web.interceptor.LogInterceptor   : RESPONSE [a5f76476-3ece-486f-934f-c7586960f731][/]
+```
+
+
+
+### 정리 
+
+실행해보면 결과는 같지만, 이렇게 `ArgumentResolver` 를 활용하면 공통 작업이 필요할 때 컨트롤러를 더욱 편리하게 사용할 수 있다.
