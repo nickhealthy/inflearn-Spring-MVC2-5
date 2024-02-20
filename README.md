@@ -904,3 +904,85 @@ public String loginV4(@Valid @ModelAttribute LoginForm form, BindingResult bindi
 
 
 
+## 스프링 인터셉터 - 소개
+
+스프링 인터셉터도 서블릿 필터와 같이 <u>웹과 관련된 공통 관심 사항을 효과적으로 해결할 수 있는 기술이다.</u>
+서블릿 필터는 서블릿이 제공하는 기술이지만, <u>스프링 인터셉터는 스프링 MVC가 제공하는 기술이다.</u>
+필터와 다르게 적용되는 순서와 범위, 그리고 사용방법이 다르다.
+
+
+
+### 인터셉터의 특징
+
+인터셉터도 필터와 비슷한 특징을 가지고 있다.
+
+#### 스프링 인터셉터의 흐름
+
+* HTTP 요청 -> WAS -> 필터 -> 서블릿 -> 스프링 인터셉터 -> 컨트롤러
+  * 스프링 MVC가 제공하는 기능이기 때문에 <u>스프링 MVC의 시작점인 디스패처 서블릿 이후에 호출하게 된다.</u>
+
+
+
+#### 스프링 인터셉터 제한
+
+필터에서처럼 인터셉터도 적절하지 않은 요청이 왔을 때 필터링이 가능하다.
+
+* HTTP 요청 -> WAS -> 필터 -> 서블릿 -> 스프링 인터셉터 -> 컨트롤러 // 로그인 사용자
+* HTTP 요청 -> WAS -> 필터 -> 서블릿 -> 스프링 인터셉터(적절하지 않은 요청이라 판단, 컨트롤러 호출 X) // 비 로그인 사용자
+
+
+
+#### 스프링 인터셉터 체인
+
+필터와 마찬가지로 인터셉터 역시 체인으로 구성 가능하다.
+
+* HTTP 요청 -> WAS -> 필터 -> 서블릿 -> 인터셉터1 -> 인터셉터2 -> 컨트롤러
+
+
+
+### 스프링 인터셉터 인터페이스
+
+스프링의 인터셉터를 사용하려면 `HandlerInterceptor` 인터페이스를 구현하면 된다.
+서블릿 필터의 `doFilter()`와 다르게 다음과 같은 3가지의 메서드를 제공한다.
+
+* `preHandle`: 컨트롤러 호출 전(핸들러 어댑터 호출 전에 호출됨) 호출
+* `postHandle`: 컨트롤러 호출 후(핸들러 어댑터 호출 후에 호출됨) 호출
+* `afterCompletion`: 요청 완료 이후(뷰가 랜더링 된 이후에 호출됨)
+
+또한 서블릿 필터는 `request, response`만 제공했지만, **인터셉터는 어떤 컨트롤러(`handler`)가 호출되는지 호출 정보도 받을 수 있고, 어떤 `modelAndView`가 반환되는지 응답 정보도 알아낼 수 있다.**
+
+```java
+public interface HandlerInterceptor {
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        return HandlerInterceptor.super.preHandle(request, response, handler);
+    }
+
+    @Override
+    public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView modelAndView) throws Exception {
+        HandlerInterceptor.super.postHandle(request, response, handler, modelAndView);
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+        HandlerInterceptor.super.afterCompletion(request, response, handler, ex);
+    }
+}
+```
+
+
+
+#### 스프링 인터셉터 호출 흐름
+
+![스크린샷 2024-02-20 오후 5.56.58](/Users/sungwoo/Desktop/스크린샷 2024-02-20 오후 5.56.58.png)
+
+
+
+#### afterCompletion은 예외가 발생해도 호출된다.
+
+* 예외가 발생하면 `postHandle`은 호출되지 않으므로 예외와 무관하게 공통 처리를 하려면 `afterCompletion`에 작성해야 한다. 마치 `finally`와 비슷하다.
+* 예외가 발생하면 예외 정보를 `ex`를 포함해서 호출된다.
+
+
+
